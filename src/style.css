@@ -179,6 +179,43 @@ body {
   margin-bottom: 12px;
 }
 
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.section-header .section-title {
+  margin-bottom: 0;
+}
+
+.download-button {
+  border: 1px solid rgba(66, 53, 241, 0.45);
+  border-radius: 6px;
+  background: var(--accent-dim);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 8px 10px;
+  transition: border-color 0.2s, background 0.2s, opacity 0.2s;
+}
+
+.download-button:hover:not(:disabled),
+.download-button:focus-visible:not(:disabled) {
+  background: rgba(66, 53, 241, 0.2);
+  border-color: var(--accent);
+}
+
+.download-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 audio {
   width: 100%;
 }
