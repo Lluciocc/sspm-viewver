@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SSPM Viewer</title>
+  
+  <script type="module" src="/src/main.ts"></script>
+</head>
+<body>
+
+  <div class="container">
+
+    <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Drop SSPM file here or click to browse">
+      <span class="dropzone__icon" aria-hidden="true">⬆</span>
+      Drop <code>.sspm</code> file here, or click to browse
+    </div>
+
+    <div class="main">
+
+      <div class="cover-wrap">
+        <img id="cover" class="cover" />
+      </div>
+
+      <div class="right">
+
+        <div class="card">
+          <div class="song-title" id="song">No map loaded</div>
+          <div class="song-artist" id="artist"></div>
+
+          <div class="meta">
+            <div class="meta-item">
+              <div class="meta-label">Version</div>
+              <div class="meta-value" id="version">—</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Difficulty</div>
+              <div class="meta-value" id="difficulty">—</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Difficulty Name</div>
+              <div class="meta-value" id="difficulty_name">—</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Length</div>
+              <div class="meta-value" id="length">—</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Notes</div>
+              <div class="meta-value" id="notes">—</div>
+            </div>
+            <div class="meta-item">
+              <div class="meta-label">Mappers</div>
+              <div class="meta-value" id="mappers">—</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="section-title">Audio</div>
+          <audio id="audio" controls></audio>
+        </div>
+
+        <div class="card">
+          <div class="section-title">Custom Data</div>
+          <pre class="json-block" id="json"></pre>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+  <div class="toast" id="toast" role="alert" aria-live="assertive"></div>
+
+</body>
+</html>
