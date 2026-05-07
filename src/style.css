@@ -168,6 +168,10 @@ body {
   word-break: break-word;
 }
 
+.difficulty-value {
+  color: var(--difficulty-color, var(--text));
+}
+
 .section-title {
   font-size: 12px;
   text-transform: uppercase;

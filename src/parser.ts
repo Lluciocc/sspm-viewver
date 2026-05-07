@@ -3,6 +3,8 @@ import {
   type SSPMMap,
   type CustomData,
   CustomDataType,
+  type Difficulty,
+  getDifficultyName,
   SSPM_SIGNATURE,
   SSPM_VERSION,
 } from "./types.js";
@@ -178,6 +180,11 @@ function parseCustomData(
   return data;
 }
 
+function parseDifficulty(value: number): Difficulty {
+  // Match C# enum casting: keep the numeric byte while typing known values.
+  return value as Difficulty;
+}
+
 export async function decodeSSPM(file: File): Promise<SSPMMap> {
   const buffer = await file.arrayBuffer();
   const parser = new FileParser(buffer);
@@ -204,7 +211,7 @@ export async function decodeSSPM(file: File): Promise<SSPMMap> {
   const mapLengthMs = parser.getUint32();
   const noteCount = parser.getUint32();
   const markerCount = parser.getUint32();
-  const difficulty = parser.getUint8();
+  const difficulty = parseDifficulty(parser.getUint8());
 
   parser.skip(2);
 
@@ -250,7 +257,6 @@ export async function decodeSSPM(file: File): Promise<SSPMMap> {
   }
 
   let customData: CustomData = {};
-  let difficultyName = "";
 
   if (customDataOffset > 0 && customDataLength > 0) {
     validateSectionBounds(
@@ -261,10 +267,12 @@ export async function decodeSSPM(file: File): Promise<SSPMMap> {
     );
 
     customData = parseCustomData(parser, customDataOffset);
-
-    difficultyName =
-      (customData["difficulty_name"] as string | null) ?? "";
   }
+
+  const difficultyName = getDifficultyName(
+    difficulty,
+    customData["difficulty_name"]
+  );
 
   let audioBlob: Blob | null = null;
 

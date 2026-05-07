@@ -1,14 +1,64 @@
 export const enum Difficulty {
-  Easy = 0,
-  Medium = 1,
-  Hard = 2,
-  Logic = 3,
-  Tasukete = 4,
+  NA = 0,
+  Easy = 1,
+  Medium = 2,
+  Hard = 3,
+  Logic = 4,
+  Tasukete = 5,
 }
 
 export const enum CustomDataType {
   ShortString = 9,   // length: uint16
   LongString = 11,   // length: uint32
+}
+
+export const DifficultyColors = {
+  [Difficulty.NA]: "#9a9a9a",
+  [Difficulty.Easy]: "#5cff72",
+  [Difficulty.Medium]: "#ffcc25",
+  [Difficulty.Hard]: "#e20000",
+  [Difficulty.Logic]: "#ff13c8",
+  [Difficulty.Tasukete]: "#ff2ea6",
+} as const satisfies Record<Difficulty, string>;
+
+export function getDifficultyName(
+  difficulty: Difficulty,
+  customName?: string | null
+): string {
+  if (customName !== undefined && customName !== null) {
+    return customName;
+  }
+
+  switch (difficulty) {
+    case Difficulty.NA:
+      return "N/A";
+    case Difficulty.Easy:
+      return "Easy";
+    case Difficulty.Medium:
+      return "Medium";
+    case Difficulty.Hard:
+      return "Hard";
+    case Difficulty.Logic:
+      return "Logic";
+    case Difficulty.Tasukete:
+      return "Tasukete";
+    default:
+      return "N/A";
+  }
+}
+
+export function getDifficultyColor(difficulty: Difficulty): string {
+  switch (difficulty) {
+    case Difficulty.NA:
+    case Difficulty.Easy:
+    case Difficulty.Medium:
+    case Difficulty.Hard:
+    case Difficulty.Logic:
+    case Difficulty.Tasukete:
+      return DifficultyColors[difficulty];
+    default:
+      return DifficultyColors[Difficulty.NA];
+  }
 }
 
 export const SSPM_SIGNATURE = "SS+m" as const;
@@ -42,7 +92,7 @@ export interface SSPMMap {
   mapId: string;
   song: string;
   artist: string;
-  difficulty: number;
+  difficulty: Difficulty;
   difficultyName: string;
   mapLengthMs: number;
   noteCount: number;

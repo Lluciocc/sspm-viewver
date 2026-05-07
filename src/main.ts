@@ -1,6 +1,6 @@
 import "./style.css";
 import { decodeSSPM, SSPMParseError, formatMs, blobToObjectURL } from "./parser.js";
-import type { SSPMMap } from "./types.js";
+import { getDifficultyColor, getDifficultyName, type SSPMMap } from "./types.js";
 
 const dropzone = document.getElementById("dropzone") as HTMLDivElement;
 const coverImg = document.getElementById("cover") as HTMLImageElement;
@@ -55,8 +55,13 @@ function renderMap(map: SSPMMap): void {
   songEl.textContent = map.song || "(untitled)";
   artistEl.textContent = map.artist;
   versionEl.textContent = String(map.version);
-  diffEl.textContent = String(map.difficulty);
+  diffEl.textContent = getDifficultyName(map.difficulty);
   diffNameEl.textContent = map.difficultyName;
+
+  const difficultyColor = getDifficultyColor(map.difficulty);
+
+  diffEl.style.setProperty("--difficulty-color", difficultyColor);
+
   lengthEl.textContent = formatMs(map.mapLengthMs);
   notesEl.textContent = String(map.noteCount);
   mappersEl.textContent = map.mappers.join(", ") || "—";
