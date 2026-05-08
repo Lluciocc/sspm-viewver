@@ -96,6 +96,7 @@ export interface SSPMMap {
   difficultyName: string;
   mapLengthMs: number;
   noteCount: number;
+  notes?: readonly Note[];
   markerCount: number;
   mappers: string[];
   customData: CustomData;

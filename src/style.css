@@ -220,6 +220,19 @@ audio {
   width: 100%;
 }
 
+.gameplay-card {
+  padding-bottom: 16px;
+}
+
+.gameplay-canvas {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  display: block;
+  background: #05060a;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
 .json-block {
   overflow: auto;
   background: #fafafa;

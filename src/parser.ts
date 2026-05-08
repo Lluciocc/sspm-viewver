@@ -2,6 +2,7 @@ import type { IFileParser } from "./types.js";
 import {
   type SSPMMap,
   type CustomData,
+  type Note,
   CustomDataType,
   type Difficulty,
   getDifficultyName,
@@ -118,6 +119,37 @@ export class FileParser implements IFileParser {
   }
 }
 
+const enum MarkerDataType {
+  End = 0,
+  Uint8 = 1,
+  Uint16 = 2,
+  Uint32 = 3,
+  Uint64 = 4,
+  Float32 = 5,
+  Float64 = 6,
+  Position = 7,
+  Buffer = 8,
+  String = 9,
+  LongBuffer = 10,
+  LongString = 11,
+  Array = 12,
+}
+
+const enum PositionStorageType {
+  Integer = 0,
+  Quantum = 1,
+}
+
+interface MarkerDefinition {
+  id: string;
+  types: readonly MarkerDataType[];
+}
+
+interface ParsedPosition {
+  x: number;
+  y: number;
+}
+
 function splitMapName(mapName: string): { artist: string; song: string } {
   const index = mapName.indexOf(" - ");
 
@@ -185,6 +217,176 @@ function parseDifficulty(value: number): Difficulty {
   return value as Difficulty;
 }
 
+function parseMarkerDefinitions(
+  parser: FileParser,
+  offset: number
+): MarkerDefinition[] {
+  parser.seek(offset);
+
+  const definitionCount = parser.getUint8();
+  const definitions: MarkerDefinition[] = [];
+
+  for (let i = 0; i < definitionCount; i++) {
+    const idLength = parser.getUint16();
+    const id = parser.getString(idLength);
+    const valueCount = parser.getUint8();
+    const types: MarkerDataType[] = [];
+
+    for (let valueIndex = 0; valueIndex < valueCount; valueIndex++) {
+      types.push(parser.getUint8() as MarkerDataType);
+    }
+
+    const terminator = parser.getUint8();
+
+    if (terminator !== MarkerDataType.End) {
+      throw new SSPMParseError(
+        `Invalid marker definition terminator: expected 0, got ${terminator}`
+      );
+    }
+
+    definitions.push({
+      id,
+      types,
+    });
+  }
+
+  return definitions;
+}
+
+function normalizeMarkerX(x: number): number {
+  return x - 1;
+}
+
+function normalizeMarkerY(y: number): number {
+  return 1 - y;
+}
+
+function readPosition(parser: FileParser): ParsedPosition {
+  const storageType = parser.getUint8();
+
+  if (storageType === PositionStorageType.Integer) {
+    return {
+      x: normalizeMarkerX(parser.getUint8()),
+      y: normalizeMarkerY(parser.getUint8()),
+    };
+  }
+
+  if (storageType === PositionStorageType.Quantum) {
+    return {
+      x: normalizeMarkerX(parser.getFloat()),
+      y: normalizeMarkerY(parser.getFloat()),
+    };
+  }
+
+  throw new SSPMParseError(`Unknown position storage type: ${storageType}`);
+}
+
+function skipMarkerValue(parser: FileParser, type: MarkerDataType): void {
+  switch (type) {
+    case MarkerDataType.Uint8:
+      parser.skip(1);
+      return;
+    case MarkerDataType.Uint16:
+      parser.skip(2);
+      return;
+    case MarkerDataType.Uint32:
+    case MarkerDataType.Float32:
+      parser.skip(4);
+      return;
+    case MarkerDataType.Uint64:
+    case MarkerDataType.Float64:
+      parser.skip(8);
+      return;
+    case MarkerDataType.Position:
+      void readPosition(parser);
+      return;
+    case MarkerDataType.Buffer:
+    case MarkerDataType.String: {
+      const length = parser.getUint16();
+
+      parser.skip(length);
+      return;
+    }
+    case MarkerDataType.LongBuffer:
+    case MarkerDataType.LongString:
+    case MarkerDataType.Array: {
+      const length = parser.getUint32();
+
+      parser.skip(length);
+      return;
+    }
+    default:
+      throw new SSPMParseError(`Unsupported marker data type: ${type}`);
+  }
+}
+
+function parseMarkerNoteData(
+  parser: FileParser,
+  definition: MarkerDefinition,
+  ms: number
+): Note | null {
+  let position: ParsedPosition | null = null;
+
+  for (const type of definition.types) {
+    if (type === MarkerDataType.Position && position === null) {
+      position = readPosition(parser);
+    } else {
+      skipMarkerValue(parser, type);
+    }
+  }
+
+  if (position === null) {
+    return null;
+  }
+
+  return {
+    ms,
+    x: position.x,
+    y: position.y,
+  };
+}
+
+function skipMarkerData(parser: FileParser, definition: MarkerDefinition): void {
+  for (const type of definition.types) {
+    skipMarkerValue(parser, type);
+  }
+}
+
+function parseMarkers(
+  parser: FileParser,
+  offset: number,
+  length: number,
+  markerCount: number,
+  definitions: readonly MarkerDefinition[]
+): Note[] {
+  parser.seek(offset);
+
+  const endOffset = offset + length;
+  const notes: Note[] = [];
+
+  for (let i = 0; i < markerCount && parser.tell() < endOffset; i++) {
+    const ms = parser.getUint32();
+    const markerType = parser.getUint8();
+    const definition = definitions[markerType];
+
+    if (definition === undefined) {
+      throw new SSPMParseError(`Unknown marker type: ${markerType}`);
+    }
+
+    if (definition.id === "ssp_note") {
+      const note = parseMarkerNoteData(parser, definition, ms);
+
+      if (note !== null) {
+        notes.push(note);
+      }
+    } else {
+      skipMarkerData(parser, definition);
+    }
+  }
+
+  return notes;
+}
+
 export async function decodeSSPM(file: File): Promise<SSPMMap> {
   const buffer = await file.arrayBuffer();
   const parser = new FileParser(buffer);
@@ -229,11 +431,11 @@ export async function decodeSSPM(file: File): Promise<SSPMMap> {
   const coverOffset = parser.getUint64();
   const coverLength = parser.getUint64();
 
-  parser.skip(16);
+  const markerDefinitionsOffset = parser.getUint64();
+  const markerDefinitionsLength = parser.getUint64();
 
   const markerOffset = parser.getUint64();
-
-  parser.skip(8);
+  const markerLength = parser.getUint64();
 
   const idLength = parser.getUint16();
   const mapId = parser.getString(idLength);
@@ -307,7 +509,40 @@ export async function decodeSSPM(file: File): Promise<SSPMMap> {
     );
   }
 
-  void markerOffset;
+  let notes: Note[] = [];
+
+  if (
+    markerDefinitionsOffset > 0 &&
+    markerDefinitionsLength > 0 &&
+    markerOffset > 0 &&
+    markerLength > 0
+  ) {
+    validateSectionBounds(
+      "marker definitions",
+      markerDefinitionsOffset,
+      markerDefinitionsLength,
+      buffer.byteLength
+    );
+    validateSectionBounds(
+      "markers",
+      markerOffset,
+      markerLength,
+      buffer.byteLength
+    );
+
+    const markerDefinitions = parseMarkerDefinitions(
+      parser,
+      markerDefinitionsOffset
+    );
+
+    notes = parseMarkers(
+      parser,
+      markerOffset,
+      markerLength,
+      markerCount,
+      markerDefinitions
+    );
+  }
 
   return {
     version,
@@ -318,6 +553,7 @@ export async function decodeSSPM(file: File): Promise<SSPMMap> {
     difficultyName,
     mapLengthMs,
     noteCount,
+    notes,
     markerCount,
     mappers,
     customData,

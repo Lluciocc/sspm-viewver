@@ -1,6 +1,8 @@
 import "./style.css";
 import { decodeSSPM, SSPMParseError, formatMs, blobToObjectURL } from "./parser.js";
+import { GameplayRenderer, NOTE_TEXTURE_URL } from "./renderer.js";
 import { getDifficultyColor, getDifficultyName, type SSPMMap } from "./types.js";
+import type { Note } from "./types.js";
 
 const dropzone = document.getElementById("dropzone") as HTMLDivElement;
 const coverImg = document.getElementById("cover") as HTMLImageElement;
@@ -13,6 +15,7 @@ const lengthEl = document.getElementById("length") as HTMLElement;
 const notesEl = document.getElementById("notes") as HTMLElement;
 const mappersEl = document.getElementById("mappers") as HTMLElement;
 const audioEl = document.getElementById("audio") as HTMLAudioElement;
+const gameplayCanvas = document.getElementById("gameplay") as HTMLCanvasElement;
 const jsonEl = document.getElementById("json") as HTMLPreElement;
 const downloadAllBtn = document.getElementById("download_all") as HTMLButtonElement;
 const toast = document.getElementById("toast") as HTMLDivElement;
@@ -21,6 +24,12 @@ let activeObjectURLs: string[] = [];
 let currentMap: SSPMMap | null = null;
 
 const textEncoder = new TextEncoder();
+const emptyNotes: readonly Note[] = [];
+const gameplayRenderer = new GameplayRenderer({
+  canvas: gameplayCanvas,
+  audio: audioEl,
+  noteTextureUrl: NOTE_TEXTURE_URL,
+});
 
 interface ZipSourceEntry {
   name: string;
@@ -74,6 +83,10 @@ function showError(message: string): void {
   }, 4000);
 }
 
+function getParsedNotes(map: SSPMMap): readonly Note[] {
+  return map.notes ?? emptyNotes;
+}
+
 function sanitizeFileName(name: string): string {
   return name
     .trim()
@@ -101,6 +114,7 @@ function createExportData(map: SSPMMap): Record<string, unknown> {
     noteCount: map.noteCount,
     markerCount: map.markerCount,
     mappers: map.mappers,
+    notes: map.notes ?? [],
     customData: map.customData,
     hasAudio: map.audioBlob !== null,
     hasCover: map.coverBlob !== null,
@@ -376,6 +390,7 @@ function renderMap(map: SSPMMap): void {
   revokeActiveURLs();
   currentMap = map;
   downloadAllBtn.disabled = false;
+  gameplayRenderer.setNotes(getParsedNotes(map));
 
   songEl.textContent = map.song || "(untitled)";
   artistEl.textContent = map.artist;
@@ -437,10 +452,24 @@ downloadAllBtn.addEventListener("click", () => {
     });
 });
 
+async function playLoadedAudio(): Promise<void> {
+  try {
+    audioEl.currentTime = 0;
+    await audioEl.play();
+  } catch {
+    showError("Autoplay was blocked. Press play to start the gameplay.");
+  }
+}
+
 async function loadMap(file: File): Promise<void> {
   try {
     const map = await decodeSSPM(file);
+
     renderMap(map);
+
+    if (map.audioBlob !== null) {
+      await playLoadedAudio();
+    }
   } catch (err) {
     if (err instanceof SSPMParseError) {
       showError(`Parse error: ${err.message}`);
