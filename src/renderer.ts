@@ -23,6 +23,12 @@ const NOTE_FALLBACK_COLOR = "#ffffff";
 const QUANTUM_DEBUG_COLOR = "rgba(74, 217, 255, 0.72)";
 const OFFGRID_DEBUG_COLOR = "rgba(255, 204, 37, 0.78)";
 const DEBUG_GRID_COLOR = "rgba(74, 217, 255, 0.16)";
+const AUTO_CURSOR_RADIUS = 9;
+const AUTO_CURSOR_TRAIL_STEPS = 8;
+const AUTO_CURSOR_TRAIL_INTERVAL = 26;
+// const AUTO_CURSOR_INNER_COLOR = "#05060a";
+// const AUTO_CURSOR_OUTLINE_COLOR = "rgba(255, 255, 255, 0.92)";
+const FULL_CIRCLE = Math.PI * 2;
 
 export interface GameplayRendererOptions {
   canvas: HTMLCanvasElement;
@@ -37,6 +43,25 @@ interface VisualizerNote {
   readonly y: number;
   readonly quantum: boolean;
   readonly offgrid: boolean;
+}
+
+interface CursorPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(max, Math.max(min, value));
+}
+
+function easeInOutCubic(value: number): number {
+  return value < 0.5
+    ? 4 * value * value * value
+    : 1 - Math.pow(-2 * value + 2, 3) * 0.5;
+}
+
+function lerp(from: number, to: number, progress: number): number {
+  return from + (to - from) * progress;
 }
 
 class MapParser {
@@ -111,6 +136,20 @@ class NoteManager {
 
   getVisibleEndIndex(currentTimeMs: number): number {
     return this.upperBound(currentTimeMs + APPROACH_TIME);
+  }
+
+  get noteCount(): number {
+    return this.count;
+  }
+
+  getPreviousIndex(currentTimeMs: number): number {
+    return this.lowerBound(currentTimeMs) - 1;
+  }
+
+  getNextIndex(currentTimeMs: number): number {
+    const index = this.lowerBound(currentTimeMs);
+
+    return index < this.count ? index : -1;
   }
 
   getTime(index: number): number {
@@ -227,6 +266,7 @@ export class GameplayRenderer {
   private rafId: number | null = null;
   private textureReady = false;
   private quantumDebugEnabled = false;
+  private autoCursorEnabled = true;
   private cssWidth = 0;
   private cssHeight = 0;
   private devicePixelRatio = 1;
@@ -278,6 +318,11 @@ export class GameplayRenderer {
 
   setQuantumDebugEnabled(enabled: boolean): void {
     this.quantumDebugEnabled = enabled;
+    this.drawFrame();
+  }
+
+  setAutoCursorEnabled(enabled: boolean): void {
+    this.autoCursorEnabled = enabled;
     this.drawFrame();
   }
 
@@ -397,8 +442,11 @@ export class GameplayRenderer {
     ctx.fillStyle = "#05060a";
     ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
 
+    const currentTimeMs = this.audioPlayer.currentTimeMs;
+
     this.drawReferenceGrid();
-    this.drawNotes(this.audioPlayer.currentTimeMs);
+    this.drawNotes(currentTimeMs);
+    this.drawAutoCursor(currentTimeMs);
   }
 
   private drawReferenceGrid(): void {
@@ -526,6 +574,129 @@ export class GameplayRenderer {
 
     this.ctx.globalAlpha = 1;
     this.ctx.shadowBlur = 0;
+  }
+
+  private drawAutoCursor(currentTimeMs: number): void {
+    if (!this.autoCursorEnabled) {
+      return;
+    }
+
+    const position = this.getAutoCursorPosition(currentTimeMs);
+
+    if (position === null) {
+      return;
+    }
+
+    const ctx = this.ctx;
+
+    ctx.save();
+    ctx.fillStyle = this.difficultyColor;
+    ctx.shadowColor = this.difficultyColor;
+    ctx.shadowBlur = 10;
+
+    for (let step = AUTO_CURSOR_TRAIL_STEPS; step >= 1; step--) {
+      const trailPosition = this.getAutoCursorPosition(
+        currentTimeMs - step * AUTO_CURSOR_TRAIL_INTERVAL
+      );
+
+      if (trailPosition === null) {
+        continue;
+      }
+
+      const freshness = 1 - step / (AUTO_CURSOR_TRAIL_STEPS + 1);
+      const radius = AUTO_CURSOR_RADIUS * (0.28 + freshness * 0.42);
+
+      ctx.globalAlpha = 0.05 + freshness * 0.2;
+      ctx.beginPath();
+      ctx.arc(trailPosition.x, trailPosition.y, radius, 0, FULL_CIRCLE);
+      ctx.fill();
+    }
+
+    ctx.globalAlpha = 1;
+    ctx.shadowBlur = 16;
+    ctx.beginPath();
+    ctx.arc(position.x, position.y, AUTO_CURSOR_RADIUS, 0, FULL_CIRCLE);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 2;
+    // ctx.strokeStyle = AUTO_CURSOR_OUTLINE_COLOR;
+    // ctx.stroke();
+
+    // ctx.fillStyle = AUTO_CURSOR_INNER_COLOR;
+    // ctx.beginPath();
+    ctx.arc(position.x, position.y, AUTO_CURSOR_RADIUS * 0.38, 0, FULL_CIRCLE);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  private getAutoCursorPosition(currentTimeMs: number): CursorPoint | null {
+    if (this.noteManager.noteCount === 0) {
+      return null;
+    }
+
+    const nextIndex = this.noteManager.getNextIndex(currentTimeMs);
+    const previousIndex = this.noteManager.getPreviousIndex(currentTimeMs);
+
+    if (nextIndex === -1) {
+      return previousIndex >= 0 ? this.getNoteHitPoint(previousIndex) : null;
+    }
+
+    const target = this.getNoteHitPoint(nextIndex);
+
+    if (previousIndex < 0) {
+      const targetTime = this.noteManager.getTime(nextIndex);
+      const startTime = targetTime - APPROACH_TIME;
+      const progress = easeInOutCubic(
+        clamp((currentTimeMs - startTime) / APPROACH_TIME, 0, 1)
+      );
+
+      return this.interpolateCursorPoint(
+        {
+          x: this.projection.screenCenterX,
+          y: this.projection.screenCenterY,
+        },
+        target,
+        progress
+      );
+    }
+
+    const previousTime = this.noteManager.getTime(previousIndex);
+    const targetTime = this.noteManager.getTime(nextIndex);
+
+    if (targetTime <= previousTime) {
+      return target;
+    }
+
+    const progress = easeInOutCubic(
+      clamp((currentTimeMs - previousTime) / (targetTime - previousTime), 0, 1)
+    );
+
+    return this.interpolateCursorPoint(
+      this.getNoteHitPoint(previousIndex),
+      target,
+      progress
+    );
+  }
+
+  private getNoteHitPoint(index: number): CursorPoint {
+    const hitScale = this.camera.projectScale(HIT_Z) * this.viewportScale;
+
+    return {
+      x: this.projection.getScreenX(this.noteManager.getX(index), hitScale),
+      y: this.projection.getScreenY(this.noteManager.getY(index), hitScale),
+    };
+  }
+
+  private interpolateCursorPoint(
+    from: CursorPoint,
+    to: CursorPoint,
+    progress: number
+  ): CursorPoint {
+    return {
+      x: lerp(from.x, to.x, progress),
+      y: lerp(from.y, to.y, progress),
+    };
   }
 
   private drawNote(

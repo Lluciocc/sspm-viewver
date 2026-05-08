@@ -216,7 +216,8 @@ body {
   opacity: 0.45;
 }
 
-.debug-toggle {
+.debug-toggle,
+.gameplay-toggle {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -228,7 +229,8 @@ body {
   user-select: none;
 }
 
-.debug-toggle input {
+.debug-toggle input,
+.gameplay-toggle input {
   accent-color: var(--accent);
 }
 
