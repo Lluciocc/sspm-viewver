@@ -531,7 +531,13 @@ dropzone.addEventListener("drop", async (e: DragEvent) => {
     return;
   }
 
-  const file = files[0];
+  const file = files.item(0);
+
+  if (!file) {
+    showError("No file dropped.");
+
+    return;
+  }
 
   console.log("Dropped file:", file);
 
