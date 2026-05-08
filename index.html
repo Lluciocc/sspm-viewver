@@ -65,13 +65,54 @@
         <div class="card gameplay-card">
           <div class="section-header">
             <div class="section-title">Gameplay</div>
-            <label class="gameplay-toggle">
-              <input id="auto_cursor" type="checkbox" checked />
-              Auto cursor
-            </label>
+            <button class="settings-icon-button" id="gameplay_settings_button" type="button" aria-haspopup="dialog" aria-controls="gameplay_settings" aria-label="Gameplay settings">
+              <svg class="settings-icon-button__icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M4 7h10" />
+                <path d="M18 7h2" />
+                <path d="M4 17h2" />
+                <path d="M10 17h10" />
+                <path d="M8 5v4" />
+                <path d="M16 15v4" />
+              </svg>
+            </button>
           </div>
           <canvas id="gameplay" class="gameplay-canvas"></canvas>
         </div>
+
+        <dialog class="settings-dialog" id="gameplay_settings" aria-labelledby="gameplay_settings_title">
+          <form class="settings-panel" method="dialog">
+            <div class="settings-panel__header">
+              <div class="section-title" id="gameplay_settings_title">Gameplay Settings</div>
+              <button class="settings-close-button" id="gameplay_settings_close" type="button" aria-label="Close gameplay settings">
+                <svg class="settings-icon-button__icon" viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M6 6l12 12" />
+                  <path d="M18 6L6 18" />
+                </svg>
+              </button>
+            </div>
+
+            <label class="gameplay-toggle gameplay-toggle--panel">
+              <span>Auto cursor</span>
+              <input id="auto_cursor" type="checkbox" checked />
+            </label>
+
+            <div class="settings-control">
+              <div class="settings-label-row">
+                <label for="note_speed">Note speed</label>
+                <output id="note_speed_value" for="note_speed">1.00x</output>
+              </div>
+              <input id="note_speed" type="range" min="0.5" max="2" step="0.05" value="1" />
+            </div>
+
+            <div class="settings-control">
+              <div class="settings-label-row">
+                <label for="note_depth">Note depth</label>
+                <output id="note_depth_value" for="note_depth">1.00x</output>
+              </div>
+              <input id="note_depth" type="range" min="0.5" max="2" step="0.05" value="1" />
+            </div>
+          </form>
+        </dialog>
 
         <div class="card">
           <div class="section-header">

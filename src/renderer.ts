@@ -5,12 +5,16 @@ export const NOTE_TEXTURE_URL =
   "https://raw.githubusercontent.com/Rhythia/Client/master/textures/squircle_blank.png";
 
 // Gameplay parameters
-const APPROACH_TIME = 550; // ms it takes for a note to fall from spawn point to hit point
-const SPAWN_Z = -1500; // z position where notes spawn (should be far enough to hide pop-in)
+const DEFAULT_APPROACH_TIME = 550; // ms it takes for a note to fall from spawn point to hit point
+const DEFAULT_SPAWN_Z = -1500; // z position where notes spawn (should be far enough to hide pop-in)
 const HIT_Z = 0; 
 const CELL_SIZE = 100; 
 const GRID_CELLS = 3;
 const CAMERA_FOCAL_LENGTH = 900;
+const MIN_NOTE_SPEED = 0.25;
+const MAX_NOTE_SPEED = 4;
+const MIN_NOTE_DEPTH = 0.25;
+const MAX_NOTE_DEPTH = 4;
 // Visual parameters
 const NOTE_SIZE = 96;
 const FAR_NOTE_ALPHA = 0.18; 
@@ -134,8 +138,8 @@ class NoteManager {
     return this.lowerBound(currentTimeMs);
   }
 
-  getVisibleEndIndex(currentTimeMs: number): number {
-    return this.upperBound(currentTimeMs + APPROACH_TIME);
+  getVisibleEndIndex(currentTimeMs: number, approachTimeMs: number): number {
+    return this.upperBound(currentTimeMs + approachTimeMs);
   }
 
   get noteCount(): number {
@@ -214,8 +218,8 @@ class Camera {
     return CAMERA_FOCAL_LENGTH / (CAMERA_FOCAL_LENGTH - z);
   }
 
-  getZ(progress: number): number {
-    return SPAWN_Z + progress * (HIT_Z - SPAWN_Z);
+  getZ(progress: number, spawnZ: number): number {
+    return spawnZ + progress * (HIT_Z - spawnZ);
   }
 }
 
@@ -267,6 +271,8 @@ export class GameplayRenderer {
   private textureReady = false;
   private quantumDebugEnabled = false;
   private autoCursorEnabled = true;
+  private noteSpeed = 1;
+  private noteDepth = 1;
   private cssWidth = 0;
   private cssHeight = 0;
   private devicePixelRatio = 1;
@@ -301,7 +307,9 @@ export class GameplayRenderer {
     this.audio.addEventListener("seeked", this.handleAudioPositionChange);
     this.audio.addEventListener("timeupdate", this.handleAudioPositionChange);
     this.audio.addEventListener("loadedmetadata", this.handleAudioPositionChange);
+    this.audio.addEventListener("ratechange", this.handleRateChange);
     this.difficultyColor = getDifficultyColor(options.difficulty);
+    this.syncAudioPlaybackRate();
 
     this.resize();
   }
@@ -326,6 +334,21 @@ export class GameplayRenderer {
     this.drawFrame();
   }
 
+  setNoteSpeed(speed: number): void {
+    this.noteSpeed = clamp(speed, MIN_NOTE_SPEED, MAX_NOTE_SPEED);
+    this.syncAudioPlaybackRate();
+    this.drawFrame();
+
+    if (!this.audioPlayer.paused && !this.audioPlayer.ended) {
+      this.start();
+    }
+  }
+
+  setNoteDepth(depth: number): void {
+    this.noteDepth = clamp(depth, MIN_NOTE_DEPTH, MAX_NOTE_DEPTH);
+    this.drawFrame();
+  }
+
   destroy(): void {
     this.stop();
     this.resizeObserver.disconnect();
@@ -336,6 +359,7 @@ export class GameplayRenderer {
     this.audio.removeEventListener("seeked", this.handleAudioPositionChange);
     this.audio.removeEventListener("timeupdate", this.handleAudioPositionChange);
     this.audio.removeEventListener("loadedmetadata", this.handleAudioPositionChange);
+    this.audio.removeEventListener("ratechange", this.handleRateChange);
     this.noteImage.onload = null;
     this.noteImage.onerror = null;
   }
@@ -364,8 +388,16 @@ export class GameplayRenderer {
   };
 
   private readonly handleAudioPositionChange = (): void => {
+    this.syncAudioPlaybackRate();
+
     if (this.audioPlayer.paused || this.audioPlayer.ended) {
       this.drawFrame();
+    }
+  };
+
+  private readonly handleRateChange = (): void => {
+    if (Math.abs(this.audio.playbackRate - this.noteSpeed) > 0.001) {
+      this.syncAudioPlaybackRate();
     }
   };
 
@@ -393,6 +425,16 @@ export class GameplayRenderer {
 
     cancelAnimationFrame(this.rafId);
     this.rafId = null;
+  }
+
+  private syncAudioPlaybackRate(): void {
+    if (this.audio.defaultPlaybackRate !== this.noteSpeed) {
+      this.audio.defaultPlaybackRate = this.noteSpeed;
+    }
+
+    if (this.audio.playbackRate !== this.noteSpeed) {
+      this.audio.playbackRate = this.noteSpeed;
+    }
   }
 
   private resize(): void {
@@ -435,6 +477,14 @@ export class GameplayRenderer {
     );
   }
 
+  private getApproachTimeMs(): number {
+    return DEFAULT_APPROACH_TIME / this.noteSpeed;
+  }
+
+  private getSpawnZ(): number {
+    return DEFAULT_SPAWN_Z * this.noteDepth;
+  }
+
   private drawFrame(): void {
     const ctx = this.ctx;
 
@@ -450,7 +500,7 @@ export class GameplayRenderer {
   }
 
   private drawReferenceGrid(): void {
-    //this.drawPerspectiveGridLayer(SPAWN_Z, BACK_GRID_ALPHA);
+    //this.drawPerspectiveGridLayer(this.getSpawnZ(), BACK_GRID_ALPHA);
     //this.drawPerspectiveConnectors();
     this.drawPerspectiveGridLayer(HIT_Z, 1);
   }
@@ -498,7 +548,7 @@ export class GameplayRenderer {
 
   private drawPerspectiveConnectors(): void {
     const ctx = this.ctx;
-    const farScale = this.camera.projectScale(SPAWN_Z) * this.viewportScale;
+    const farScale = this.camera.projectScale(this.getSpawnZ()) * this.viewportScale;
     const nearSize = this.gridSize * this.viewportScale;
     const farSize = this.gridSize * farScale;
     const centerX = this.projection.screenCenterX;
@@ -535,19 +585,20 @@ export class GameplayRenderer {
   }
 
   private drawNotes(currentTimeMs: number): void {
+    const approachTimeMs = this.getApproachTimeMs();
     const startIndex = this.noteManager.getVisibleStartIndex(currentTimeMs);
-    let noteIndex = this.noteManager.getVisibleEndIndex(currentTimeMs);
+    let noteIndex = this.noteManager.getVisibleEndIndex(currentTimeMs, approachTimeMs);
 
     for (noteIndex -= 1; noteIndex >= startIndex; noteIndex--) {
       const time = this.noteManager.getTime(noteIndex);
       const delta = time - currentTimeMs;
 
-      if (delta > APPROACH_TIME || delta < 0) {
+      if (delta > approachTimeMs || delta < 0) {
         continue;
       }
 
-      const progress = 1 - delta / APPROACH_TIME;
-      const z = this.camera.getZ(progress);
+      const progress = 1 - delta / approachTimeMs;
+      const z = this.camera.getZ(progress, this.getSpawnZ());
       const scale = this.camera.projectScale(z);
       const visualScale = scale * this.viewportScale;
       const noteX = this.noteManager.getX(noteIndex);
@@ -645,10 +696,11 @@ export class GameplayRenderer {
     const target = this.getNoteHitPoint(nextIndex);
 
     if (previousIndex < 0) {
+      const approachTimeMs = this.getApproachTimeMs();
       const targetTime = this.noteManager.getTime(nextIndex);
-      const startTime = targetTime - APPROACH_TIME;
+      const startTime = targetTime - approachTimeMs;
       const progress = easeInOutCubic(
-        clamp((currentTimeMs - startTime) / APPROACH_TIME, 0, 1)
+        clamp((currentTimeMs - startTime) / approachTimeMs, 0, 1)
       );
 
       return this.interpolateCursorPoint(

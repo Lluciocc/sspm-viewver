@@ -18,16 +18,25 @@ const notesEl = document.getElementById("notes") as HTMLElement;
 const mappersEl = document.getElementById("mappers") as HTMLElement;
 const audioEl = document.getElementById("audio") as HTMLAudioElement;
 const gameplayCanvas = document.getElementById("gameplay") as HTMLCanvasElement;
+const gameplaySettingsDialog = document.getElementById("gameplay_settings") as HTMLDialogElement;
+const gameplaySettingsButton = document.getElementById("gameplay_settings_button") as HTMLButtonElement;
+const gameplaySettingsCloseButton = document.getElementById("gameplay_settings_close") as HTMLButtonElement;
 const autoCursorToggle = document.getElementById("auto_cursor") as HTMLInputElement;
+const noteSpeedSlider = document.getElementById("note_speed") as HTMLInputElement;
+const noteSpeedValue = document.getElementById("note_speed_value") as HTMLOutputElement;
+const noteDepthSlider = document.getElementById("note_depth") as HTMLInputElement;
+const noteDepthValue = document.getElementById("note_depth_value") as HTMLOutputElement;
 const jsonEl = document.getElementById("json") as HTMLPreElement;
 const downloadAllBtn = document.getElementById("download_all") as HTMLButtonElement;
 const toast = document.getElementById("toast") as HTMLDivElement;
 
 let activeObjectURLs: string[] = [];
 let currentMap: SSPMMap | null = null;
+let gameplaySettingsCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
 const textEncoder = new TextEncoder();
 const emptyNotes: readonly Note[] = [];
+const GAMEPLAY_SETTINGS_ANIMATION_MS = 180;
 const gameplayRenderer = new GameplayRenderer({
   canvas: gameplayCanvas,
   audio: audioEl,
@@ -36,6 +45,7 @@ const gameplayRenderer = new GameplayRenderer({
 });
 
 gameplayRenderer.setAutoCursorEnabled(autoCursorToggle.checked);
+syncGameplaySettings();
 
 interface ZipSourceEntry {
   name: string;
@@ -87,6 +97,83 @@ function showError(message: string): void {
   toastTimer = setTimeout(() => {
     toast.classList.remove("show");
   }, 4000);
+}
+
+function getSliderValue(slider: HTMLInputElement): number {
+  const value = Number(slider.value);
+
+  return Number.isFinite(value) ? value : 1;
+}
+
+function formatMultiplier(value: number): string {
+  return `${value.toFixed(2)}x`;
+}
+
+function syncNoteSpeedSetting(): void {
+  const noteSpeed = getSliderValue(noteSpeedSlider);
+
+  noteSpeedValue.value = formatMultiplier(noteSpeed);
+  gameplayRenderer.setNoteSpeed(noteSpeed);
+}
+
+function syncNoteDepthSetting(): void {
+  const noteDepth = getSliderValue(noteDepthSlider);
+
+  noteDepthValue.value = formatMultiplier(noteDepth);
+  gameplayRenderer.setNoteDepth(noteDepth);
+}
+
+function syncGameplaySettings(): void {
+  syncNoteSpeedSetting();
+  syncNoteDepthSetting();
+}
+
+function openGameplaySettings(): void {
+  if (gameplaySettingsCloseTimer !== null) {
+    clearTimeout(gameplaySettingsCloseTimer);
+    gameplaySettingsCloseTimer = null;
+  }
+
+  gameplaySettingsDialog.classList.remove("is-closing");
+
+  if (gameplaySettingsDialog.open) {
+    return;
+  }
+
+  if (typeof gameplaySettingsDialog.showModal === "function") {
+    gameplaySettingsDialog.showModal();
+  } else {
+    gameplaySettingsDialog.setAttribute("open", "");
+  }
+}
+
+function finishGameplaySettingsClose(): void {
+  gameplaySettingsDialog.classList.remove("is-closing");
+  gameplaySettingsCloseTimer = null;
+
+  if (typeof gameplaySettingsDialog.close === "function") {
+    gameplaySettingsDialog.close();
+  } else {
+    gameplaySettingsDialog.removeAttribute("open");
+  }
+}
+
+function closeGameplaySettings(): void {
+  if (!gameplaySettingsDialog.open || gameplaySettingsCloseTimer !== null) {
+    return;
+  }
+
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    finishGameplaySettingsClose();
+
+    return;
+  }
+
+  gameplaySettingsDialog.classList.add("is-closing");
+  gameplaySettingsCloseTimer = setTimeout(
+    finishGameplaySettingsClose,
+    GAMEPLAY_SETTINGS_ANIMATION_MS
+  );
 }
 
 function getParsedNotes(map: SSPMMap): readonly Note[] {
@@ -461,6 +548,37 @@ downloadAllBtn.addEventListener("click", () => {
 
 autoCursorToggle.addEventListener("change", () => {
   gameplayRenderer.setAutoCursorEnabled(autoCursorToggle.checked);
+});
+
+noteSpeedSlider.addEventListener("input", syncNoteSpeedSetting);
+noteDepthSlider.addEventListener("input", syncNoteDepthSetting);
+
+gameplaySettingsButton.addEventListener("click", () => {
+  openGameplaySettings();
+});
+
+gameplaySettingsCloseButton.addEventListener("click", () => {
+  closeGameplaySettings();
+});
+
+gameplaySettingsDialog.addEventListener("click", (event: MouseEvent) => {
+  if (event.target === gameplaySettingsDialog) {
+    closeGameplaySettings();
+  }
+});
+
+gameplaySettingsDialog.addEventListener("cancel", (event: Event) => {
+  event.preventDefault();
+  closeGameplaySettings();
+});
+
+gameplaySettingsDialog.addEventListener("close", () => {
+  if (gameplaySettingsCloseTimer !== null) {
+    clearTimeout(gameplaySettingsCloseTimer);
+    gameplaySettingsCloseTimer = null;
+  }
+
+  gameplaySettingsDialog.classList.remove("is-closing");
 });
 
 async function playLoadedAudio(): Promise<void> {
