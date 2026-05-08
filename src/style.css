@@ -267,6 +267,54 @@ audio {
   color: var(--muted);
 }
 
+.site-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 20px;
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.site-footer__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.site-footer__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+}
+
+.site-footer a {
+  color: var(--text);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.site-footer__repo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.site-footer__icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+}
+
+.site-footer a:hover,
+.site-footer a:focus-visible {
+  color: var(--accent);
+}
+
 .badge {
   display: inline-block;
   background: var(--accent-dim);
