@@ -231,6 +231,7 @@ export class GameplayRenderer {
   private cssHeight = 0;
   private devicePixelRatio = 1;
   private gridSize = CELL_SIZE * GRID_CELLS;
+  private viewportScale = 1;
   private difficultyColor: string;
 
   constructor(options: GameplayRendererOptions) {
@@ -368,12 +369,25 @@ export class GameplayRenderer {
     this.cssWidth = width;
     this.cssHeight = height;
     this.devicePixelRatio = ratio;
+    this.viewportScale = this.getViewportScale(width, height);
     this.canvas.width = Math.floor(width * ratio);
     this.canvas.height = Math.floor(height * ratio);
     this.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
     this.projection.resize(width, height);
 
     this.drawFrame();
+  }
+
+  private getViewportScale(width: number, height: number): number {
+    const padding = 8;
+    const horizontalScale = (width - padding) / this.gridSize;
+    const verticalScale = (height * 0.96 - padding) / this.gridSize;
+
+    return Math.min(
+      1,
+      Math.max(0.1, horizontalScale),
+      Math.max(0.1, verticalScale)
+    );
   }
 
   private drawFrame(): void {
@@ -396,8 +410,9 @@ export class GameplayRenderer {
   private drawPerspectiveGridLayer(z: number, alpha: number): void {
     const ctx = this.ctx;
     const scale = this.camera.projectScale(z);
-    const cell = CELL_SIZE * scale;
-    const size = this.gridSize * scale;
+    const visualScale = scale * this.viewportScale;
+    const cell = CELL_SIZE * visualScale;
+    const size = this.gridSize * visualScale;
     const left = this.projection.screenCenterX - size * 0.5;
     const top = this.projection.screenCenterY - size * 0.5;
 
@@ -435,8 +450,8 @@ export class GameplayRenderer {
 
   private drawPerspectiveConnectors(): void {
     const ctx = this.ctx;
-    const farScale = this.camera.projectScale(SPAWN_Z);
-    const nearSize = this.gridSize;
+    const farScale = this.camera.projectScale(SPAWN_Z) * this.viewportScale;
+    const nearSize = this.gridSize * this.viewportScale;
     const farSize = this.gridSize * farScale;
     const centerX = this.projection.screenCenterX;
     const centerY = this.projection.screenCenterY;
@@ -486,13 +501,14 @@ export class GameplayRenderer {
       const progress = 1 - delta / APPROACH_TIME;
       const z = this.camera.getZ(progress);
       const scale = this.camera.projectScale(z);
+      const visualScale = scale * this.viewportScale;
       const noteX = this.noteManager.getX(noteIndex);
       const noteY = this.noteManager.getY(noteIndex);
-      const screenX = this.projection.getScreenX(noteX, scale);
-      const screenY = this.projection.getScreenY(noteY, scale);
+      const screenX = this.projection.getScreenX(noteX, visualScale);
+      const screenY = this.projection.getScreenY(noteY, visualScale);
       const offgridScale = this.getOffgridScale(noteX, noteY);
       const quantumScale = this.noteManager.isQuantum(noteIndex) ? 0.94 : 1;
-      const size = NOTE_SIZE * scale * offgridScale * quantumScale;
+      const size = NOTE_SIZE * visualScale * offgridScale * quantumScale;
       const alpha = FAR_NOTE_ALPHA + (1 - FAR_NOTE_ALPHA) * progress;
       const glow = 2 + (NEAR_GLOW_BLUR - 2) * progress;
 
