@@ -4,14 +4,16 @@ import { getDifficultyColor } from "./types.js";
 export const NOTE_TEXTURE_URL =
   "https://raw.githubusercontent.com/Rhythia/Client/master/textures/squircle_blank.png";
 
-const APPROACH_TIME = 550;
-const SPAWN_Z = -1500;
-const HIT_Z = 0;
-const CELL_SIZE = 100;
+// Gameplay parameters
+const APPROACH_TIME = 550; // ms it takes for a note to fall from spawn point to hit point
+const SPAWN_Z = -1500; // z position where notes spawn (should be far enough to hide pop-in)
+const HIT_Z = 0; 
+const CELL_SIZE = 100; 
 const GRID_CELLS = 3;
 const CAMERA_FOCAL_LENGTH = 900;
-const NOTE_SIZE = 68;
-const FAR_NOTE_ALPHA = 0.18;
+// Visual parameters
+const NOTE_SIZE = 96;
+const FAR_NOTE_ALPHA = 0.18; 
 const NEAR_GLOW_BLUR = 22;
 const MAX_DEVICE_PIXEL_RATIO = 2;
 const BACK_GRID_ALPHA = 0.18;
@@ -386,8 +388,8 @@ export class GameplayRenderer {
   }
 
   private drawReferenceGrid(): void {
-    this.drawPerspectiveGridLayer(SPAWN_Z, BACK_GRID_ALPHA);
-    this.drawPerspectiveConnectors();
+    //this.drawPerspectiveGridLayer(SPAWN_Z, BACK_GRID_ALPHA);
+    //this.drawPerspectiveConnectors();
     this.drawPerspectiveGridLayer(HIT_Z, 1);
   }
 
