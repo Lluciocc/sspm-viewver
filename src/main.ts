@@ -505,8 +505,14 @@ dropzone.addEventListener("click", () => {
   input.click();
 });
 
-dropzone.addEventListener("dragover", (e: DragEvent) => {
-  e.preventDefault();
+["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
+  dropzone.addEventListener(eventName, (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  });
+});
+
+dropzone.addEventListener("dragover", () => {
   dropzone.classList.add("drag-over");
 });
 
@@ -515,13 +521,19 @@ dropzone.addEventListener("dragleave", () => {
 });
 
 dropzone.addEventListener("drop", async (e: DragEvent) => {
-  e.preventDefault();
-
   dropzone.classList.remove("drag-over");
 
-  const file = e.dataTransfer?.files[0];
+  const files = e.dataTransfer?.files;
 
-  if (file) {
-    await loadMap(file);
+  if (!files || files.length === 0) {
+    showError("No file dropped.");
+
+    return;
   }
+
+  const file = files[0];
+
+  console.log("Dropped file:", file);
+
+  await loadMap(file);
 });
