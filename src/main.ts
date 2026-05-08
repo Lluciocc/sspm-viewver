@@ -16,6 +16,7 @@ const notesEl = document.getElementById("notes") as HTMLElement;
 const mappersEl = document.getElementById("mappers") as HTMLElement;
 const audioEl = document.getElementById("audio") as HTMLAudioElement;
 const gameplayCanvas = document.getElementById("gameplay") as HTMLCanvasElement;
+const quantumDebugInput = document.getElementById("quantum_debug") as HTMLInputElement;
 const jsonEl = document.getElementById("json") as HTMLPreElement;
 const downloadAllBtn = document.getElementById("download_all") as HTMLButtonElement;
 const toast = document.getElementById("toast") as HTMLDivElement;
@@ -450,6 +451,10 @@ downloadAllBtn.addEventListener("click", () => {
       downloadAllBtn.disabled = false;
       downloadAllBtn.textContent = "Download ZIP";
     });
+});
+
+quantumDebugInput.addEventListener("change", () => {
+  gameplayRenderer.setQuantumDebugEnabled(quantumDebugInput.checked);
 });
 
 async function playLoadedAudio(): Promise<void> {

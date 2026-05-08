@@ -3,18 +3,27 @@ import type { Note } from "./types.js";
 export const NOTE_TEXTURE_URL =
   "https://raw.githubusercontent.com/Rhythia/Client/master/textures/squircle_blank.png";
 
-const SCROLL_SPEED_PX_PER_MS = 0.48;
-const POST_HIT_VISIBLE_MS = 180;
-const MIN_APPROACH_MS = 650;
-const MAX_APPROACH_MS = 1450;
-const MIN_NOTE_SCALE = 0.18;
-const POST_HIT_SCALE_BOOST = 0.28;
+const APPROACH_TIME = 550;
+const SPAWN_Z = -1500;
+const HIT_Z = 0;
+const CELL_SIZE = 100;
+const GRID_CELLS = 3;
+const CAMERA_FOCAL_LENGTH = 900;
+const NOTE_SIZE = 68;
+const FAR_NOTE_ALPHA = 0.18;
+const NEAR_GLOW_BLUR = 22;
+const MAX_DEVICE_PIXEL_RATIO = 2;
+const BACK_GRID_ALPHA = 0.18;
 const GRID_LINE_COLOR = "rgba(255, 255, 255, 0.18)";
 const GRID_FILL_COLOR = "rgba(255, 255, 255, 0.035)";
-const HIT_LINE_COLOR = "rgba(255, 46, 166, 0.82)";
+const HIT_PLANE_COLOR = "rgba(255, 46, 166, 0.82)";
 const NOTE_FALLBACK_COLOR = "#ffffff";
-const NOTE_SHADOW_COLOR = "rgba(255, 46, 166, 0.75)";
-const MAX_DEVICE_PIXEL_RATIO = 2;
+const NOTE_SHADOW_COLOR = "rgba(255, 46, 166, 0.78)";
+const QUANTUM_DEBUG_COLOR = "rgba(74, 217, 255, 0.72)";
+const OFFGRID_DEBUG_COLOR = "rgba(255, 204, 37, 0.78)";
+const DEBUG_GRID_COLOR = "rgba(74, 217, 255, 0.16)";
+const DEBUG_DASH_PATTERN = [4, 7] as const;
+const EMPTY_DASH_PATTERN = [] as const;
 
 export interface GameplayRendererOptions {
   canvas: HTMLCanvasElement;
@@ -22,31 +31,211 @@ export interface GameplayRendererOptions {
   noteTextureUrl: string;
 }
 
+interface VisualizerNote {
+  readonly time: number;
+  readonly x: number;
+  readonly y: number;
+  readonly quantum: boolean;
+  readonly offgrid: boolean;
+}
+
+class MapParser {
+  static normalizeNotes(notes: readonly Note[]): VisualizerNote[] {
+    return notes
+      .filter((note: Note) => Number.isFinite(note.ms))
+      .map((note: Note): VisualizerNote => ({
+        time: note.ms,
+        x: note.x + 1,
+        y: 1 - note.y,
+        quantum: note.quantum,
+        offgrid: note.offgrid,
+      }))
+      .sort((a: VisualizerNote, b: VisualizerNote) => a.time - b.time);
+  }
+}
+
+class AudioPlayer {
+  private readonly audio: HTMLAudioElement;
+
+  constructor(audio: HTMLAudioElement) {
+    this.audio = audio;
+  }
+
+  get currentTimeMs(): number {
+    return this.audio.currentTime * 1000;
+  }
+
+  get paused(): boolean {
+    return this.audio.paused;
+  }
+
+  get ended(): boolean {
+    return this.audio.ended;
+  }
+}
+
+class NoteManager {
+  private times = new Float64Array(0);
+  private xs = new Float64Array(0);
+  private ys = new Float64Array(0);
+  private quantumFlags = new Uint8Array(0);
+  private offgridFlags = new Uint8Array(0);
+  private count = 0;
+
+  setNotes(notes: readonly VisualizerNote[]): void {
+    this.count = notes.length;
+    this.times = new Float64Array(this.count);
+    this.xs = new Float64Array(this.count);
+    this.ys = new Float64Array(this.count);
+    this.quantumFlags = new Uint8Array(this.count);
+    this.offgridFlags = new Uint8Array(this.count);
+
+    for (let i = 0; i < notes.length; i++) {
+      const note = notes[i];
+
+      if (note === undefined) {
+        continue;
+      }
+
+      this.times[i] = note.time;
+      this.xs[i] = note.x;
+      this.ys[i] = note.y;
+      this.quantumFlags[i] = note.quantum ? 1 : 0;
+      this.offgridFlags[i] = note.offgrid ? 1 : 0;
+    }
+  }
+
+  getVisibleStartIndex(currentTimeMs: number): number {
+    return this.lowerBound(currentTimeMs);
+  }
+
+  getVisibleEndIndex(currentTimeMs: number): number {
+    return this.upperBound(currentTimeMs + APPROACH_TIME);
+  }
+
+  getTime(index: number): number {
+    return this.times[index] ?? 0;
+  }
+
+  getX(index: number): number {
+    return this.xs[index] ?? 1;
+  }
+
+  getY(index: number): number {
+    return this.ys[index] ?? 1;
+  }
+
+  isQuantum(index: number): boolean {
+    return this.quantumFlags[index] === 1;
+  }
+
+  isOffgrid(index: number): boolean {
+    return this.offgridFlags[index] === 1;
+  }
+
+  private lowerBound(value: number): number {
+    let low = 0;
+    let high = this.count;
+
+    while (low < high) {
+      const mid = (low + high) >>> 1;
+      const time = this.times[mid] ?? 0;
+
+      if (time < value) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+
+    return low;
+  }
+
+  private upperBound(value: number): number {
+    let low = 0;
+    let high = this.count;
+
+    while (low < high) {
+      const mid = (low + high) >>> 1;
+      const time = this.times[mid] ?? 0;
+
+      if (time <= value) {
+        low = mid + 1;
+      } else {
+        high = mid;
+      }
+    }
+
+    return low;
+  }
+}
+
+class Camera {
+  projectScale(z: number): number {
+    return CAMERA_FOCAL_LENGTH / (CAMERA_FOCAL_LENGTH - z);
+  }
+
+  getZ(progress: number): number {
+    return SPAWN_Z + progress * (HIT_Z - SPAWN_Z);
+  }
+}
+
+class Projection {
+  private centerX = 0;
+  private centerY = 0;
+
+  resize(width: number, height: number): void {
+    this.centerX = width * 0.5;
+    this.centerY = height * 0.52;
+  }
+
+  get screenCenterX(): number {
+    return this.centerX;
+  }
+
+  get screenCenterY(): number {
+    return this.centerY;
+  }
+
+  getWorldX(noteX: number): number {
+    return noteX * CELL_SIZE - CELL_SIZE;
+  }
+
+  getWorldY(noteY: number): number {
+    return noteY * CELL_SIZE - CELL_SIZE;
+  }
+
+  getScreenX(noteX: number, scale: number): number {
+    return this.centerX + this.getWorldX(noteX) * scale;
+  }
+
+  getScreenY(noteY: number, scale: number): number {
+    return this.centerY + this.getWorldY(noteY) * scale;
+  }
+}
+
 export class GameplayRenderer {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly audio: HTMLAudioElement;
+  private readonly audioPlayer: AudioPlayer;
+  private readonly noteManager = new NoteManager();
+  private readonly camera = new Camera();
+  private readonly projection = new Projection();
   private readonly noteImage: HTMLImageElement;
   private readonly resizeObserver: ResizeObserver;
   private rafId: number | null = null;
   private textureReady = false;
+  private quantumDebugEnabled = false;
   private cssWidth = 0;
   private cssHeight = 0;
   private devicePixelRatio = 1;
-  private gridLeft = 0;
-  private gridTop = 0;
-  private gridSize = 0;
-  private hitLineY = 0;
-  private noteSize = 32;
-  private approachMs = MAX_APPROACH_MS;
-  private noteTimes = new Float64Array(0);
-  private noteXs = new Float32Array(0);
-  private noteYs = new Float32Array(0);
-  private noteCount = 0;
+  private gridSize = CELL_SIZE * GRID_CELLS;
 
   constructor(options: GameplayRendererOptions) {
     this.canvas = options.canvas;
     this.audio = options.audio;
+    this.audioPlayer = new AudioPlayer(options.audio);
 
     const context = this.canvas.getContext("2d", { alpha: false });
 
@@ -75,28 +264,12 @@ export class GameplayRenderer {
   }
 
   setNotes(notes: readonly Note[]): void {
-    const sortedNotes = notes
-      .filter((note: Note) => Number.isFinite(note.ms))
-      .slice()
-      .sort((a: Note, b: Note) => a.ms - b.ms);
+    this.noteManager.setNotes(MapParser.normalizeNotes(notes));
+    this.drawFrame();
+  }
 
-    this.noteCount = sortedNotes.length;
-    this.noteTimes = new Float64Array(this.noteCount);
-    this.noteXs = new Float32Array(this.noteCount);
-    this.noteYs = new Float32Array(this.noteCount);
-
-    for (let i = 0; i < sortedNotes.length; i++) {
-      const note = sortedNotes[i];
-
-      if (note === undefined) {
-        continue;
-      }
-
-      this.noteTimes[i] = note.ms;
-      this.noteXs[i] = Number.isFinite(note.x) ? note.x : 0;
-      this.noteYs[i] = Number.isFinite(note.y) ? note.y : 0;
-    }
-
+  setQuantumDebugEnabled(enabled: boolean): void {
+    this.quantumDebugEnabled = enabled;
     this.drawFrame();
   }
 
@@ -138,7 +311,7 @@ export class GameplayRenderer {
   };
 
   private readonly handleAudioPositionChange = (): void => {
-    if (this.audio.paused || this.audio.ended) {
+    if (this.audioPlayer.paused || this.audioPlayer.ended) {
       this.drawFrame();
     }
   };
@@ -147,7 +320,7 @@ export class GameplayRenderer {
     this.rafId = null;
     this.drawFrame();
 
-    if (!this.audio.paused && !this.audio.ended) {
+    if (!this.audioPlayer.paused && !this.audioPlayer.ended) {
       this.start();
     }
   };
@@ -191,49 +364,44 @@ export class GameplayRenderer {
     this.canvas.width = Math.floor(width * ratio);
     this.canvas.height = Math.floor(height * ratio);
     this.ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
-
-    this.gridSize = Math.min(width * 0.72, height * 0.62);
-    this.gridLeft = (width - this.gridSize) * 0.5;
-    this.gridTop = height * 0.52 - this.gridSize * 0.5;
-    this.hitLineY = this.gridTop + this.gridSize * 0.5;
-    this.noteSize = Math.max(22, Math.min(42, this.gridSize * 0.12));
-    this.approachMs = this.clamp(
-      this.gridSize / SCROLL_SPEED_PX_PER_MS,
-      MIN_APPROACH_MS,
-      MAX_APPROACH_MS
-    );
+    this.projection.resize(width, height);
 
     this.drawFrame();
   }
 
   private drawFrame(): void {
     const ctx = this.ctx;
-    const width = this.cssWidth;
-    const height = this.cssHeight;
 
-    ctx.clearRect(0, 0, width, height);
+    ctx.clearRect(0, 0, this.cssWidth, this.cssHeight);
     ctx.fillStyle = "#05060a";
-    ctx.fillRect(0, 0, width, height);
+    ctx.fillRect(0, 0, this.cssWidth, this.cssHeight);
 
-    this.drawStage();
-    this.drawNotes(this.audio.currentTime * 1000);
+    this.drawReferenceGrid();
+    this.drawNotes(this.audioPlayer.currentTimeMs);
   }
 
-  private drawStage(): void {
-    const ctx = this.ctx;
-    const left = this.gridLeft;
-    const top = this.gridTop;
-    const size = this.gridSize;
-    const cellSize = size / 3;
+  private drawReferenceGrid(): void {
+    this.drawPerspectiveGridLayer(SPAWN_Z, BACK_GRID_ALPHA);
+    this.drawPerspectiveConnectors();
+    this.drawPerspectiveGridLayer(HIT_Z, 1);
+  }
 
+  private drawPerspectiveGridLayer(z: number, alpha: number): void {
+    const ctx = this.ctx;
+    const scale = this.camera.projectScale(z);
+    const cell = CELL_SIZE * scale;
+    const size = this.gridSize * scale;
+    const left = this.projection.screenCenterX - size * 0.5;
+    const top = this.projection.screenCenterY - size * 0.5;
+
+    ctx.globalAlpha = alpha;
     ctx.fillStyle = GRID_FILL_COLOR;
     ctx.fillRect(left, top, size, size);
+    ctx.lineWidth = Math.max(1, scale);
+    ctx.strokeStyle = z === HIT_Z ? GRID_LINE_COLOR : DEBUG_GRID_COLOR;
 
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = GRID_LINE_COLOR;
-
-    for (let i = 0; i <= 3; i++) {
-      const position = i * cellSize;
+    for (let i = 0; i <= GRID_CELLS; i++) {
+      const position = i * cell;
 
       ctx.beginPath();
       ctx.moveTo(left + position, top);
@@ -246,127 +414,135 @@ export class GameplayRenderer {
       ctx.stroke();
     }
 
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = HIT_LINE_COLOR;
-    ctx.shadowColor = HIT_LINE_COLOR;
-    ctx.shadowBlur = 14;
+    if (z === HIT_Z) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = HIT_PLANE_COLOR;
+      ctx.shadowColor = HIT_PLANE_COLOR;
+      ctx.shadowBlur = 16;
+      ctx.strokeRect(left, top, size, size);
+      ctx.shadowBlur = 0;
+    }
+
+    ctx.globalAlpha = 1;
+  }
+
+  private drawPerspectiveConnectors(): void {
+    const ctx = this.ctx;
+    const farScale = this.camera.projectScale(SPAWN_Z);
+    const nearSize = this.gridSize;
+    const farSize = this.gridSize * farScale;
+    const centerX = this.projection.screenCenterX;
+    const centerY = this.projection.screenCenterY;
+    const nearLeft = centerX - nearSize * 0.5;
+    const nearTop = centerY - nearSize * 0.5;
+    const farLeft = centerX - farSize * 0.5;
+    const farTop = centerY - farSize * 0.5;
+
+    ctx.globalAlpha = 0.32;
+    ctx.strokeStyle = DEBUG_GRID_COLOR;
+    ctx.lineWidth = 1;
+
+    this.drawConnector(nearLeft, nearTop, farLeft, farTop);
+    this.drawConnector(nearLeft + nearSize, nearTop, farLeft + farSize, farTop);
+    this.drawConnector(nearLeft, nearTop + nearSize, farLeft, farTop + farSize);
+    this.drawConnector(
+      nearLeft + nearSize,
+      nearTop + nearSize,
+      farLeft + farSize,
+      farTop + farSize
+    );
+
+    ctx.globalAlpha = 1;
+  }
+
+  private drawConnector(fromX: number, fromY: number, toX: number, toY: number): void {
+    const ctx = this.ctx;
+
     ctx.beginPath();
-    ctx.moveTo(left, this.hitLineY);
-    ctx.lineTo(left + size, this.hitLineY);
+    ctx.moveTo(fromX, fromY);
+    ctx.lineTo(toX, toY);
     ctx.stroke();
-    ctx.shadowBlur = 0;
   }
 
   private drawNotes(currentTimeMs: number): void {
-    const startTimeMs = currentTimeMs - POST_HIT_VISIBLE_MS;
-    const endTimeMs = currentTimeMs + this.approachMs;
-    let noteIndex = this.findFirstVisibleNote(startTimeMs);
+    const startIndex = this.noteManager.getVisibleStartIndex(currentTimeMs);
+    let noteIndex = this.noteManager.getVisibleEndIndex(currentTimeMs);
 
-    this.ctx.shadowColor = NOTE_SHADOW_COLOR;
-    this.ctx.shadowBlur = 12;
+    for (noteIndex -= 1; noteIndex >= startIndex; noteIndex--) {
+      const time = this.noteManager.getTime(noteIndex);
+      const delta = time - currentTimeMs;
 
-    for (; noteIndex < this.noteCount; noteIndex++) {
-      const noteTime = this.noteTimes[noteIndex] ?? 0;
-
-      if (noteTime > endTimeMs) {
-        break;
+      if (delta > APPROACH_TIME || delta < 0) {
+        continue;
       }
 
-      const timeUntilHitMs = noteTime - currentTimeMs;
-      const targetX = this.normalizedXToCanvas(this.noteXs[noteIndex] ?? 0);
-      const targetY = this.normalizedYToCanvas(this.noteYs[noteIndex] ?? 0);
-      const lateMs = currentTimeMs - noteTime;
-      const alpha = lateMs > 0 ? Math.max(0, 1 - lateMs / POST_HIT_VISIBLE_MS) : 1;
-      const approachProgress = this.getApproachProgress(timeUntilHitMs);
-      const noteScale = this.getNoteScale(approachProgress, lateMs);
-      const size = this.noteSize * noteScale;
-      const halfSize = size * 0.5;
+      const progress = 1 - delta / APPROACH_TIME;
+      const z = this.camera.getZ(progress);
+      const scale = this.camera.projectScale(z);
+      const noteX = this.noteManager.getX(noteIndex);
+      const noteY = this.noteManager.getY(noteIndex);
+      const screenX = this.projection.getScreenX(noteX, scale);
+      const screenY = this.projection.getScreenY(noteY, scale);
+      const offgridScale = this.getOffgridScale(noteX, noteY);
+      const quantumScale = this.noteManager.isQuantum(noteIndex) ? 0.94 : 1;
+      const size = NOTE_SIZE * scale * offgridScale * quantumScale;
+      const alpha = FAR_NOTE_ALPHA + (1 - FAR_NOTE_ALPHA) * progress;
+      const glow = 2 + (NEAR_GLOW_BLUR - 2) * progress;
 
-      this.drawNote(targetX - halfSize, targetY - halfSize, size, alpha);
+      this.ctx.shadowColor = NOTE_SHADOW_COLOR;
+      this.ctx.shadowBlur = glow;
+      this.drawNote(
+        screenX - size * 0.5,
+        screenY - size * 0.5,
+        size,
+        alpha,
+        this.noteManager.isQuantum(noteIndex),
+        this.noteManager.isOffgrid(noteIndex)
+      );
     }
 
     this.ctx.globalAlpha = 1;
     this.ctx.shadowBlur = 0;
   }
 
-  private drawNote(x: number, y: number, size: number, alpha: number): void {
+  private drawNote(
+    x: number,
+    y: number,
+    size: number,
+    alpha: number,
+    quantum: boolean,
+    offgrid: boolean
+  ): void {
     const ctx = this.ctx;
+    const radius = size * (quantum ? 0.32 : 0.24);
 
     ctx.globalAlpha = alpha;
 
     if (this.textureReady) {
       ctx.drawImage(this.noteImage, x, y, size, size);
-
-      return;
+    } else {
+      ctx.fillStyle = NOTE_FALLBACK_COLOR;
+      ctx.beginPath();
+      ctx.roundRect(x, y, size, size, radius);
+      ctx.fill();
     }
 
-    ctx.fillStyle = NOTE_FALLBACK_COLOR;
-    ctx.beginPath();
-    ctx.roundRect(x, y, size, size, size * 0.24);
-    ctx.fill();
-  }
-
-  private findFirstVisibleNote(startTimeMs: number): number {
-    let low = 0;
-    let high = this.noteCount;
-
-    while (low < high) {
-      const mid = (low + high) >>> 1;
-      const noteTime = this.noteTimes[mid] ?? 0;
-
-      if (noteTime < startTimeMs) {
-        low = mid + 1;
-      } else {
-        high = mid;
-      }
+    if (this.quantumDebugEnabled && (quantum || offgrid)) {
+      ctx.lineWidth = Math.max(1, size * 0.08);
+      ctx.strokeStyle = offgrid ? OFFGRID_DEBUG_COLOR : QUANTUM_DEBUG_COLOR;
+      ctx.beginPath();
+      ctx.roundRect(x, y, size, size, radius);
+      ctx.stroke();
     }
-
-    return low;
   }
 
-  private normalizedXToCanvas(x: number): number {
-    const normalized = this.clampNormalized(x);
+  private getOffgridScale(x: number, y: number): number {
+    const distance = Math.max(Math.abs(x - 1), Math.abs(y - 1));
 
-    return this.gridLeft + (normalized + 1) * 0.5 * this.gridSize;
-  }
-
-  private normalizedYToCanvas(y: number): number {
-    const normalized = this.clampNormalized(y);
-
-    return this.gridTop + (1 - (normalized + 1) * 0.5) * this.gridSize;
-  }
-
-  private getApproachProgress(timeUntilHitMs: number): number {
-    if (timeUntilHitMs <= 0) {
+    if (distance <= 1) {
       return 1;
     }
 
-    return 1 - this.clamp(timeUntilHitMs / this.approachMs, 0, 1);
-  }
-
-  private getNoteScale(progress: number, lateMs: number): number {
-    if (lateMs > 0) {
-      return 1 + POST_HIT_SCALE_BOOST * this.clamp(lateMs / POST_HIT_VISIBLE_MS, 0, 1);
-    }
-
-    const easedProgress = 1 - Math.pow(1 - progress, 3);
-
-    return MIN_NOTE_SCALE + (1 - MIN_NOTE_SCALE) * easedProgress;
-  }
-
-  private clampNormalized(value: number): number {
-    return this.clamp(value, -1, 1);
-  }
-
-  private clamp(value: number, min: number, max: number): number {
-    if (value < min) {
-      return min;
-    }
-
-    if (value > max) {
-      return max;
-    }
-
-    return value;
+    return Math.max(0.34, 1 / (1 + (distance - 1) * 0.42));
   }
 }

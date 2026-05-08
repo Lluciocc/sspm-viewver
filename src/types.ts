@@ -78,6 +78,8 @@ export interface Note {
   ms: number;
   x: number;
   y: number;
+  quantum: boolean;
+  offgrid: boolean;
 }
 
 export interface Marker {

@@ -148,6 +148,8 @@ interface MarkerDefinition {
 interface ParsedPosition {
   x: number;
   y: number;
+  quantum: boolean;
+  offgrid: boolean;
 }
 
 function splitMapName(mapName: string): { artist: string; song: string } {
@@ -261,21 +263,34 @@ function normalizeMarkerY(y: number): number {
   return 1 - y;
 }
 
+function isOffgrid(x: number, y: number): boolean {
+  return x < -1 || x > 1 || y < -1 || y > 1;
+}
+
+function createParsedPosition(x: number, y: number, quantum: boolean): ParsedPosition {
+  return {
+    x,
+    y,
+    quantum,
+    offgrid: isOffgrid(x, y),
+  };
+}
+
 function readPosition(parser: FileParser): ParsedPosition {
   const storageType = parser.getUint8();
 
   if (storageType === PositionStorageType.Integer) {
-    return {
-      x: normalizeMarkerX(parser.getUint8()),
-      y: normalizeMarkerY(parser.getUint8()),
-    };
+    const x = normalizeMarkerX(parser.getUint8());
+    const y = normalizeMarkerY(parser.getUint8());
+
+    return createParsedPosition(x, y, false);
   }
 
   if (storageType === PositionStorageType.Quantum) {
-    return {
-      x: normalizeMarkerX(parser.getFloat()),
-      y: normalizeMarkerY(parser.getFloat()),
-    };
+    const x = normalizeMarkerX(parser.getFloat());
+    const y = normalizeMarkerY(parser.getFloat());
+
+    return createParsedPosition(x, y, true);
   }
 
   throw new SSPMParseError(`Unknown position storage type: ${storageType}`);
@@ -343,6 +358,8 @@ function parseMarkerNoteData(
     ms,
     x: position.x,
     y: position.y,
+    quantum: position.quantum,
+    offgrid: position.offgrid,
   };
 }
 
