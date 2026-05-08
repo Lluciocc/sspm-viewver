@@ -356,6 +356,13 @@ async function downloadMapAssets(map: SSPMMap): Promise<void> {
     });
   }
 
+  if (map.audioBlob !== null){
+    entries.push({
+      name : "audio.wav",
+      data: new Uint8Array(await map.audioBlob.arrayBuffer()),
+    });
+  }
+
   const zipBlob = await createZipBlob(entries);
 
   downloadBlob(zipBlob, getZipFileName(map));
