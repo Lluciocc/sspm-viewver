@@ -1,4 +1,5 @@
-import type { Note } from "./types.js";
+import type { Note, Difficulty } from "./types.js";
+import { getDifficultyColor } from "./types.js";
 
 export const NOTE_TEXTURE_URL =
   "https://raw.githubusercontent.com/Rhythia/Client/master/textures/squircle_blank.png";
@@ -16,19 +17,16 @@ const MAX_DEVICE_PIXEL_RATIO = 2;
 const BACK_GRID_ALPHA = 0.18;
 const GRID_LINE_COLOR = "rgba(255, 255, 255, 0.18)";
 const GRID_FILL_COLOR = "rgba(255, 255, 255, 0.035)";
-const HIT_PLANE_COLOR = "rgba(255, 46, 166, 0.82)";
 const NOTE_FALLBACK_COLOR = "#ffffff";
-const NOTE_SHADOW_COLOR = "rgba(255, 46, 166, 0.78)";
 const QUANTUM_DEBUG_COLOR = "rgba(74, 217, 255, 0.72)";
 const OFFGRID_DEBUG_COLOR = "rgba(255, 204, 37, 0.78)";
 const DEBUG_GRID_COLOR = "rgba(74, 217, 255, 0.16)";
-const DEBUG_DASH_PATTERN = [4, 7] as const;
-const EMPTY_DASH_PATTERN = [] as const;
 
 export interface GameplayRendererOptions {
   canvas: HTMLCanvasElement;
   audio: HTMLAudioElement;
   noteTextureUrl: string;
+  difficulty: Difficulty;
 }
 
 interface VisualizerNote {
@@ -231,6 +229,7 @@ export class GameplayRenderer {
   private cssHeight = 0;
   private devicePixelRatio = 1;
   private gridSize = CELL_SIZE * GRID_CELLS;
+  private difficultyColor: string;
 
   constructor(options: GameplayRendererOptions) {
     this.canvas = options.canvas;
@@ -259,8 +258,14 @@ export class GameplayRenderer {
     this.audio.addEventListener("seeked", this.handleAudioPositionChange);
     this.audio.addEventListener("timeupdate", this.handleAudioPositionChange);
     this.audio.addEventListener("loadedmetadata", this.handleAudioPositionChange);
+    this.difficultyColor = getDifficultyColor(options.difficulty);
 
     this.resize();
+  }
+
+  setDifficulty(difficulty: Difficulty): void {
+    this.difficultyColor = getDifficultyColor(difficulty);
+    this.drawFrame();
   }
 
   setNotes(notes: readonly Note[]): void {
@@ -416,8 +421,8 @@ export class GameplayRenderer {
 
     if (z === HIT_Z) {
       ctx.lineWidth = 2;
-      ctx.strokeStyle = HIT_PLANE_COLOR;
-      ctx.shadowColor = HIT_PLANE_COLOR;
+      ctx.strokeStyle = this.difficultyColor;
+      ctx.shadowColor = this.difficultyColor;
       ctx.shadowBlur = 16;
       ctx.strokeRect(left, top, size, size);
       ctx.shadowBlur = 0;
@@ -489,7 +494,7 @@ export class GameplayRenderer {
       const alpha = FAR_NOTE_ALPHA + (1 - FAR_NOTE_ALPHA) * progress;
       const glow = 2 + (NEAR_GLOW_BLUR - 2) * progress;
 
-      this.ctx.shadowColor = NOTE_SHADOW_COLOR;
+      this.ctx.shadowColor = this.difficultyColor;
       this.ctx.shadowBlur = glow;
       this.drawNote(
         screenX - size * 0.5,

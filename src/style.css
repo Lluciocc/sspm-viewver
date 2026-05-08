@@ -251,7 +251,7 @@ audio {
 
 .json-block {
   overflow: auto;
-  background: #fafafa;
+  background: var(--surface-2);
   border: 1px solid var(--border);
   padding: 16px;
   border-radius: 10px;
