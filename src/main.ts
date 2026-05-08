@@ -8,6 +8,9 @@ import type { Note } from "./types.js";
 
 const dropzone = document.getElementById("dropzone") as HTMLDivElement;
 const coverImg = document.getElementById("cover") as HTMLImageElement;
+const coverPreviewDialog = document.getElementById("cover_preview_dialog") as HTMLDialogElement;
+const coverPreviewImg = document.getElementById("cover_preview") as HTMLImageElement;
+const coverPreviewCloseButton = document.getElementById("cover_preview_close") as HTMLButtonElement;
 const songEl = document.getElementById("song") as HTMLElement;
 const artistEl = document.getElementById("artist") as HTMLElement;
 const versionEl = document.getElementById("version") as HTMLElement;
@@ -33,10 +36,15 @@ const toast = document.getElementById("toast") as HTMLDivElement;
 let activeObjectURLs: string[] = [];
 let currentMap: SSPMMap | null = null;
 let gameplaySettingsCloseTimer: ReturnType<typeof setTimeout> | null = null;
+let coverPreviewCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
 const textEncoder = new TextEncoder();
 const emptyNotes: readonly Note[] = [];
 const GAMEPLAY_SETTINGS_ANIMATION_MS = 180;
+const COVER_PREVIEW_ANIMATION_MS = 180;
+const desktopCoverPreviewQuery = window.matchMedia(
+  "(min-width: 721px) and (hover: hover) and (pointer: fine)"
+);
 const gameplayRenderer = new GameplayRenderer({
   canvas: gameplayCanvas,
   audio: audioEl,
@@ -173,6 +181,64 @@ function closeGameplaySettings(): void {
   gameplaySettingsCloseTimer = setTimeout(
     finishGameplaySettingsClose,
     GAMEPLAY_SETTINGS_ANIMATION_MS
+  );
+}
+
+function hasVisibleCover(): boolean {
+  return coverImg.currentSrc !== "" || coverImg.src !== "";
+}
+
+function openCoverPreview(): void {
+  if (!desktopCoverPreviewQuery.matches || !hasVisibleCover()) {
+    return;
+  }
+
+  if (coverPreviewCloseTimer !== null) {
+    clearTimeout(coverPreviewCloseTimer);
+    coverPreviewCloseTimer = null;
+  }
+
+  coverPreviewDialog.classList.remove("is-closing");
+  coverPreviewImg.src = coverImg.currentSrc || coverImg.src;
+  coverPreviewImg.alt = coverImg.alt || "Cover preview";
+
+  if (coverPreviewDialog.open) {
+    return;
+  }
+
+  if (typeof coverPreviewDialog.showModal === "function") {
+    coverPreviewDialog.showModal();
+  } else {
+    coverPreviewDialog.setAttribute("open", "");
+  }
+}
+
+function finishCoverPreviewClose(): void {
+  coverPreviewDialog.classList.remove("is-closing");
+  coverPreviewCloseTimer = null;
+
+  if (typeof coverPreviewDialog.close === "function") {
+    coverPreviewDialog.close();
+  } else {
+    coverPreviewDialog.removeAttribute("open");
+  }
+}
+
+function closeCoverPreview(): void {
+  if (!coverPreviewDialog.open || coverPreviewCloseTimer !== null) {
+    return;
+  }
+
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    finishCoverPreviewClose();
+
+    return;
+  }
+
+  coverPreviewDialog.classList.add("is-closing");
+  coverPreviewCloseTimer = setTimeout(
+    finishCoverPreviewClose,
+    COVER_PREVIEW_ANIMATION_MS
   );
 }
 
@@ -505,10 +571,23 @@ function renderMap(map: SSPMMap): void {
 
   if (coverURL) {
     coverImg.src = coverURL;
+    coverImg.alt = `${map.song || "Map"} cover`;
+    coverImg.tabIndex = 0;
+    coverImg.setAttribute("role", "button");
+    coverImg.setAttribute("aria-label", "Open cover preview");
+    coverPreviewImg.src = coverURL;
+    coverPreviewImg.alt = coverImg.alt;
     coverImg.style.visibility = "visible";
   } else {
     coverImg.removeAttribute("src");
+    coverImg.removeAttribute("alt");
+    coverImg.removeAttribute("role");
+    coverImg.removeAttribute("aria-label");
+    coverImg.tabIndex = -1;
+    coverPreviewImg.removeAttribute("src");
+    coverPreviewImg.removeAttribute("alt");
     coverImg.style.visibility = "hidden";
+    closeCoverPreview();
   }
 
   const audioURL = trackURL(blobToObjectURL(map.audioBlob));
@@ -579,6 +658,47 @@ gameplaySettingsDialog.addEventListener("close", () => {
   }
 
   gameplaySettingsDialog.classList.remove("is-closing");
+});
+
+coverImg.addEventListener("click", () => {
+  openCoverPreview();
+});
+
+coverImg.addEventListener("keydown", (event: KeyboardEvent) => {
+  if (event.key === "Enter" || event.key === " ") {
+    event.preventDefault();
+    openCoverPreview();
+  }
+});
+
+coverPreviewCloseButton.addEventListener("click", () => {
+  closeCoverPreview();
+});
+
+coverPreviewDialog.addEventListener("click", (event: MouseEvent) => {
+  if (event.target === coverPreviewDialog) {
+    closeCoverPreview();
+  }
+});
+
+coverPreviewDialog.addEventListener("cancel", (event: Event) => {
+  event.preventDefault();
+  closeCoverPreview();
+});
+
+coverPreviewDialog.addEventListener("close", () => {
+  if (coverPreviewCloseTimer !== null) {
+    clearTimeout(coverPreviewCloseTimer);
+    coverPreviewCloseTimer = null;
+  }
+
+  coverPreviewDialog.classList.remove("is-closing");
+});
+
+desktopCoverPreviewQuery.addEventListener("change", () => {
+  if (!desktopCoverPreviewQuery.matches) {
+    closeCoverPreview();
+  }
 });
 
 async function playLoadedAudio(): Promise<void> {

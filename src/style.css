@@ -110,6 +110,19 @@ body {
   border: 1px solid var(--border);
 }
 
+@media (min-width: 721px) and (hover: hover) and (pointer: fine) {
+  .cover[src] {
+    cursor: zoom-in;
+    transition: border-color 0.2s, filter 0.2s, transform 0.2s;
+  }
+
+  .cover[src]:hover {
+    border-color: var(--muted);
+    filter: brightness(1.06);
+    transform: translateY(-1px);
+  }
+}
+
 .cover[src=""] {
   visibility: hidden;
 }
@@ -222,7 +235,7 @@ body {
   place-items: center;
   width: 32px;
   height: 32px;
-  border: 1px solid rgba(66, 53, 241, 0.45);
+  border: 1px solid var(--muted);
   border-radius: 8px;
   background: var(--accent-dim);
   color: var(--text);
@@ -234,8 +247,8 @@ body {
 .settings-icon-button:focus-visible,
 .settings-close-button:hover,
 .settings-close-button:focus-visible {
-  background: rgba(66, 53, 241, 0.2);
-  border-color: var(--accent);
+  background: var(--surface-2);
+  border-color: var(--muted);
 }
 
 .settings-icon-button__icon {
@@ -411,6 +424,114 @@ body {
   accent-color: var(--accent);
 }
 
+.cover-dialog {
+  width: min(76vmin, 720px);
+  max-width: calc(100vw - 64px);
+  max-height: calc(100dvh - 64px);
+  border: 0;
+  border-radius: var(--radius);
+  position: fixed;
+  inset: 50% auto auto 50%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  overflow: visible;
+  transform: translate(-50%, -50%);
+  transform-origin: center;
+}
+
+.cover-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.68);
+  backdrop-filter: blur(8px);
+}
+
+.cover-dialog[open] {
+  animation: cover-dialog-in 0.22s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.cover-dialog[open]::backdrop {
+  animation: cover-backdrop-in 0.22s ease-out both;
+}
+
+.cover-dialog.is-closing {
+  animation: cover-dialog-out 0.16s ease-in both;
+  pointer-events: none;
+}
+
+.cover-dialog.is-closing::backdrop {
+  animation: cover-backdrop-out 0.16s ease-in both;
+}
+
+.cover-dialog__image {
+  display: block;
+  width: 100%;
+  max-height: calc(100dvh - 64px);
+  aspect-ratio: 1 / 1;
+  object-fit: contain;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.62);
+}
+
+.cover-dialog__close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 1;
+  background: rgba(17, 17, 17, 0.72);
+  backdrop-filter: blur(10px);
+}
+
+@keyframes cover-dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 14px)) scale(0.94);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes cover-dialog-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  to {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 10px)) scale(0.96);
+  }
+}
+
+@keyframes cover-backdrop-in {
+  from {
+    background: rgba(0, 0, 0, 0);
+    backdrop-filter: blur(0);
+  }
+
+  to {
+    background: rgba(0, 0, 0, 0.68);
+    backdrop-filter: blur(8px);
+  }
+}
+
+@keyframes cover-backdrop-out {
+  from {
+    background: rgba(0, 0, 0, 0.68);
+    backdrop-filter: blur(8px);
+  }
+
+  to {
+    background: rgba(0, 0, 0, 0);
+    backdrop-filter: blur(0);
+  }
+}
+
 audio {
   width: 100%;
 }
@@ -567,6 +688,10 @@ audio {
     display: none;
   }
 
+  .cover-dialog[open] {
+    display: none;
+  }
+
   .right {
     gap: 14px;
   }
@@ -685,7 +810,11 @@ audio {
   .settings-dialog[open],
   .settings-dialog[open]::backdrop,
   .settings-dialog.is-closing,
-  .settings-dialog.is-closing::backdrop {
+  .settings-dialog.is-closing::backdrop,
+  .cover-dialog[open],
+  .cover-dialog[open]::backdrop,
+  .cover-dialog.is-closing,
+  .cover-dialog.is-closing::backdrop {
     animation: none;
   }
 }
